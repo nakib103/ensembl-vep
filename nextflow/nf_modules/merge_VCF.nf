@@ -7,12 +7,6 @@
 nextflow.enable.dsl=2
 
 // defaults
-prefix = "out"
-mergedVCF = "merged-file"
-if ( params.output_prefix != "" ){
-  mergedVCF = params.output_prefix
-}
-params.outdir = ""
 params.cpus = 1
 
 process mergeVCF {
@@ -26,10 +20,6 @@ process mergeVCF {
       2) A tabix index for that VCF
   */
 
-  publishDir "${params.outdir}", 
-    enabled: "${params.outdir}" as Boolean,
-    mode:'move'
-    
   cpus params.cpus
   container "${params.singularity_dir}/bcftools.sif"
   
@@ -39,15 +29,24 @@ process mergeVCF {
   input:
   path(vcfFiles)
   path(indexFiles)
+  val(outdir)
+  val(output_prefix)
 
   output:
-  path("${ mergedVCF }.vcf.gz*")
+  val("${outdir}/${output_prefix}.vcf.gz"), emit: vcfFile
+  val("${outdir}/${output_prefix}.vcf.gz.tbi"), emit: indexFile
 
   script: 
   """
+  temp_output_file=${ outdir }/temp-${ output_prefix }.vcf.gz
+  bcftools concat --no-version -a ${ vcfFiles } -Oz -o \${temp_output_file}
+  
   mkdir -p temp
-  bcftools concat --no-version -a ${ vcfFiles } -Oz -o temp-${ mergedVCF}.vcf.gz
-  bcftools sort -T temp -Oz temp-${ mergedVCF}.vcf.gz -o ${ mergedVCF}.vcf.gz 
-  bcftools index -t ${ mergedVCF}.vcf.gz
+  output_file=${ outdir }/${ output_prefix }.vcf.gz
+  bcftools sort -T temp -Oz \${temp_output_file} -o \${output_file}
+  
+  bcftools index -t \${output_file}
+  
+  rm \${temp_output_file}
   """
 }

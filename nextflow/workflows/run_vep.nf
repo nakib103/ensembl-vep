@@ -11,6 +11,7 @@ nextflow.enable.dsl=2
 params.help = false
 params.cpus = 1
 params.outdir = "outdir"
+params.output_prefix = "merged-vcf"
 params.singularity_dir=""
 params.vep_config=""
 params.chros=""
@@ -42,64 +43,85 @@ if (params.help) {
   exit 1
 }
 
-// Input validation
-
-if( !params.vcf) {
-  exit 1, "Undefined --vcf parameter. Please provide the path to a VCF file"
+workflow run_vep {
+  take:
+    vcf
+    vcf_index
+    vep_config
+    bin_size
+    outdir
+    output_prefix
+  main:
+    if (params.chros){
+      log.info 'Reading chromosome names from list'
+      chr_str = params.chros.toString()
+      chr = Channel.of(chr_str.split(','))
+    }
+    else if (params.chros_file) {
+      log.info 'Reading chromosome names from file'
+      chr = Channel.fromPath(params.chros_file).splitText().map{it -> it.trim()}
+    }
+    else {
+      log.info 'Computing chromosome names from input'
+      readChrVCF(vcf, vcf_index)
+      chr = readChrVCF.out.splitText().map{it -> it.trim()}
+    }
+    splitVCF(chr, vcf, vcf_index, bin_size)
+    chrosVEP(splitVCF.out.files.transpose(), vep_config)
+    mergeVCF(chrosVEP.out.vcfFile.collect(), chrosVEP.out.indexFile.collect(), outdir, output_prefix)
+  emit:
+    vcfFile = mergeVCF.out.vcfFile
+    indexFile = mergeVCF.out.indexFile
 }
-
-vcfFile = file(params.vcf)
-if( !vcfFile.exists() ) {
-  exit 1, "The specified VCF file does not exist: ${params.vcf}"
-}
-
-check_bgzipped = "bgzip -t $params.vcf".execute()
-check_bgzipped.waitFor()
-if(check_bgzipped.exitValue()){
-  exit 1, "The specified VCF file is not bgzipped: ${params.vcf}"
-}
-
-if ( !params.skip_check ){
-  def sout = new StringBuilder(), serr = new StringBuilder()
-  check_parsing = "$params.singularity_dir/vep.sif tabix -p vcf -f $params.vcf".execute()
-  check_parsing.consumeProcessOutput(sout, serr)
-  check_parsing.waitFor()
-  if( serr ){
-    exit 1, "The specified VCF file has issues in parsing: $serr"
-  }
-}
-vcf_index = "${params.vcf}.tbi"
-
-if ( params.vep_config ){
-  vepFile = file(params.vep_config)
-  if( !vepFile.exists() ){
-    exit 1, "The specified VEP config does not exist: ${params.vep_config}"
-  }
-}
-else
-{
-  exit 1, "Undefined --vep_config parameter. Please provide a VEP config file"
-}
-
-log.info 'Starting workflow.....'
 
 workflow {
-log.info params.chros
-  if (params.chros){
-    log.info 'Reading chromosome names from list'
-    chr_str = params.chros.toString()
-    chr = Channel.of(chr_str.split(','))
+  // Input validation
+  
+  log.info 'Validating input.....'
+  if( !params.vcf) {
+    exit 1, "Undefined --vcf parameter. Please provide the path to a VCF file"
   }
-  else if (params.chros_file) {
-    log.info 'Reading chromosome names from file'
-    chr = Channel.fromPath(params.chros_file).splitText().map{it -> it.trim()}
+
+  vcfFile = file(params.vcf)
+  if( !vcfFile.exists() ) {
+    exit 1, "The specified VCF file does not exist: ${params.vcf}"
   }
-  else {
-    log.info 'Computing chromosome names from input'
-    readChrVCF(params.vcf, vcf_index)
-    chr = readChrVCF.out.splitText().map{it -> it.trim()}
+
+  check_bgzipped = "bgzip -t $params.vcf".execute()
+  check_bgzipped.waitFor()
+  if(check_bgzipped.exitValue()){
+    exit 1, "The specified VCF file is not bgzipped: ${params.vcf}"
   }
-  splitVCF(chr, params.vcf, vcf_index, params.bin_size)
-  chrosVEP(splitVCF.out.files.transpose(), params.vep_config)
-  mergeVCF(chrosVEP.out.vcfFile.collect(), chrosVEP.out.indexFile.collect())
+
+  if ( !params.skip_check ){
+    def sout = new StringBuilder(), serr = new StringBuilder()
+    check_parsing = "$params.singularity_dir/vep.sif tabix -p vcf -f $params.vcf".execute()
+    check_parsing.consumeProcessOutput(sout, serr)
+    check_parsing.waitFor()
+    if( serr ){
+      exit 1, "The specified VCF file has issues in parsing: $serr"
+    }
+  }
+  vcf_index = "${params.vcf}.tbi"
+
+  if ( params.vep_config ){
+    vepFile = file(params.vep_config)
+    if( !vepFile.exists() ){
+      exit 1, "The specified VEP config does not exist: ${params.vep_config}"
+    }
+  }
+  else
+  {
+    exit 1, "Undefined --vep_config parameter. Please provide a VEP config file"
+  }
+
+  // call the vep workflow
+  log.info 'Starting workflow.....'
+  run_vep( 
+    file(params.vcf), file(vcf_index), 
+    file(params.vep_config), 
+    params.bin_size,  
+    params.outdir, 
+    params.output_prefix
+  )
 }  

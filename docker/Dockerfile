@@ -1,4 +1,4 @@
-ARG BRANCH=main
+ARG BRANCH=release/110
 
 ###################################################
 # Stage 1 - docker container to build ensembl-vep #
@@ -191,7 +191,11 @@ ENV PLUGIN_DEPS "https://raw.githubusercontent.com/Ensembl/VEP_plugins/$BRANCH/c
 #   - Ubuntu packages
 RUN curl -O "$PLUGIN_DEPS/ubuntu-packages.txt" && \
     apt-get update && apt-get install -y --no-install-recommends \
+<<<<<<< Updated upstream
     $(sed s/\#.*//g ubuntu-packages.txt) && \
+=======
+    $(sed -e s/\#.*//g -e s/^python$/python3/ -e s/^python-dev$/python3-dev/ -e s/^python-pip$/python3-pip/ -e s/^python-setuptools$/python3-setuptools/ ubuntu-packages.txt) && \
+>>>>>>> Stashed changes
     rm -rf /var/lib/apt/lists/* ubuntu-packages.txt
 #   - Perl modules
 RUN curl -O "$PLUGIN_DEPS/cpanfile" && \
@@ -199,7 +203,11 @@ RUN curl -O "$PLUGIN_DEPS/cpanfile" && \
     rm -rf /root/.cpanm cpanfile
 #   - Python packages
 RUN curl -O "$PLUGIN_DEPS/requirements.txt" && \
+<<<<<<< Updated upstream
     python -m pip install --no-cache-dir -r requirements.txt && \
+=======
+    python3 -m pip install --no-cache-dir -r requirements.txt && \
+>>>>>>> Stashed changes
     rm requirements.txt
 
 # Set working directory as symlink to $OPT/.vep (containing VEP cache and data)

@@ -617,6 +617,13 @@ sub _fetch_chr_synonyms {
       $tree->{$_}->{$a} = 1 for keys %{$tree->{$b} || {}};
     }
   }
+
+  # if we have MT variant also add M as its synoynym as we do not have it in the database
+  if ($tree->{MT}) {
+    $tree->{M}->{$_} = 1 for keys %{$tree->{MT}};
+    $tree->{MT}->{M} = 1;
+  }
+  
   return $tree;
 }
 
